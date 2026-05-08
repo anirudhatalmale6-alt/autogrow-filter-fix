@@ -84,6 +84,8 @@ module load cpu
 module load gcc
 module load openbabel 2>/dev/null
 
+export PATH=~/final_project/autogrow4/autogrow/docking/docking_executables/vina/autodock_vina_1_1_2_linux_x86/bin:$PATH
+
 TOTAL_COMPOUNDS=TOTAL_VAL
 CHUNK=CHUNK_VAL
 WORKERS=WORKERS_VAL
