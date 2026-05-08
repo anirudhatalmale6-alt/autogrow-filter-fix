@@ -57,7 +57,7 @@ def smiles_to_pdbqt(smiles, obabel_path, tmp_dir):
 
     result = subprocess.run(
         [obabel_path, "-:" + smiles, "-osdf", "-O", sdf_path,
-         "--gen3d", "--best", "-h"],
+         "--gen3d", "-h"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60
     )
     if not os.path.exists(sdf_path) or os.path.getsize(sdf_path) < 10:
