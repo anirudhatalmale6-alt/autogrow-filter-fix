@@ -28,7 +28,7 @@ def download_file(url, dest):
         print(f"  Already downloaded: {dest}")
         return True
     print(f"  Downloading {url}...")
-    result = subprocess.run(["curl", "-sL", url, "-o", dest], capture_output=True)
+    result = subprocess.run(["curl", "-sL", url, "-o", dest], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         print(f"  ERROR: Download failed: {result.stderr.decode()}")
         return False
