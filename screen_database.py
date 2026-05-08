@@ -27,39 +27,13 @@ import shutil
 def find_vina():
     """Find the Vina executable."""
     home = os.path.expanduser("~")
-    vina_base = os.path.join(home, "final_project", "autogrow4", "autogrow", "docking", "docking_executables", "vina")
-    candidates = [
-        os.path.join(vina_base, "autodock_vina_1_1_2_linux_x86", "bin", "vina"),
-        os.path.join(vina_base, "autodock_vina_1_1_2_linux_x86", "vina"),
-        shutil.which("vina"),
-        shutil.which("vina_1.2.5_linux_x86_64"),
-        "/usr/local/bin/vina",
-    ]
-    if os.path.isdir(vina_base):
-        print("  Scanning vina directory: " + vina_base)
-        for root, dirs, files in os.walk(vina_base):
-            print("    Dir: " + root + " -> files: " + str(files))
-            for f in files:
-                full = os.path.join(root, f)
-                candidates.insert(0, full)
-    else:
-        print("  vina_base is not a directory: " + vina_base)
-    print("  Candidates: " + str(candidates[:10]))
-    for c in candidates:
-        if c and os.path.isfile(c):
-            if not os.access(c, os.X_OK):
-                try:
-                    os.chmod(c, 0o755)
-                except OSError:
-                    pass
-            if os.access(c, os.X_OK):
-                print("  Found vina: " + c)
-                return c
-    for c in candidates:
-        if c and os.path.isfile(c):
-            print("  Found vina (no exec): " + c)
-            return c
-    print("  NONE found among candidates")
+    direct = os.path.join(home, "final_project", "autogrow4", "autogrow", "docking",
+                          "docking_executables", "vina", "autodock_vina_1_1_2_linux_x86", "bin", "vina")
+    if os.path.isfile(direct):
+        return direct
+    v = shutil.which("vina")
+    if v:
+        return v
     return None
 
 
