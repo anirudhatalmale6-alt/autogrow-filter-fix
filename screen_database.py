@@ -31,16 +31,20 @@ def find_vina():
     candidates = [
         os.path.join(vina_base, "autodock_vina_1_1_2_linux_x86", "bin", "vina"),
         os.path.join(vina_base, "autodock_vina_1_1_2_linux_x86", "vina"),
-        vina_base,
         shutil.which("vina"),
         shutil.which("vina_1.2.5_linux_x86_64"),
         "/usr/local/bin/vina",
     ]
     if os.path.isdir(vina_base):
+        print("  Scanning vina directory: " + vina_base)
         for root, dirs, files in os.walk(vina_base):
+            print("    Dir: " + root + " -> files: " + str(files))
             for f in files:
-                if f == "vina" or f.startswith("vina_"):
-                    candidates.insert(0, os.path.join(root, f))
+                full = os.path.join(root, f)
+                candidates.insert(0, full)
+    else:
+        print("  vina_base is not a directory: " + vina_base)
+    print("  Candidates: " + str(candidates[:10]))
     for c in candidates:
         if c and os.path.isfile(c):
             if not os.access(c, os.X_OK):
@@ -49,10 +53,13 @@ def find_vina():
                 except OSError:
                     pass
             if os.access(c, os.X_OK):
+                print("  Found vina: " + c)
                 return c
     for c in candidates:
         if c and os.path.isfile(c):
+            print("  Found vina (no exec): " + c)
             return c
+    print("  NONE found among candidates")
     return None
 
 
