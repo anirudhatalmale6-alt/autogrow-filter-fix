@@ -80,9 +80,9 @@ submit_database() {
 ACCOUNT_VAL
 
 module purge
-module load cpu
-module load gcc
-module load openbabel 2>/dev/null
+module load cpu/0.15.4
+module load gcc/10.2.0
+module load openbabel/3.0.0
 
 export PATH=~/final_project/autogrow4/autogrow/docking/docking_executables/vina/autodock_vina_1_1_2_linux_x86/bin:$PATH
 
