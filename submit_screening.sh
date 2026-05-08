@@ -2,6 +2,7 @@
 #=====================================================================
 # Virtual Screening Submission Script for SDSC Expanse
 # Screens NP Atlas and/or COCONUT databases using AutoDock Vina
+# Runs parallel docking processes on a single node
 #
 # Usage:
 #   bash submit_screening.sh npatlas    # Screen NP Atlas only
@@ -26,17 +27,19 @@ SIZE_Y=21.0
 SIZE_Z=22.5
 EXHAUSTIVENESS=20
 
-# Chunk size: compounds per Slurm task
+# Slurm settings (matching your normal AutoGrow4 setup)
+PARTITION="shared"
+ACCOUNT="--account=iit135"
+NTASKS=100
+MEM="200G"
+TIME="48:00:00"
+
+# Parallel workers within the node
+PARALLEL_WORKERS=50
+# Compounds per worker chunk
 CHUNK_SIZE=200
 
-# Slurm settings
-PARTITION="shared"
-TIME="04:00:00"
-CPUS=1
-MEM="4G"
-ACCOUNT=""  # Set your allocation account if required, e.g., ACCOUNT="--account=TG-CHE123456"
-
-mkdir -p "${RESULTS_DIR}" "${POSES_DIR}"
+mkdir -p "${RESULTS_DIR}" "${POSES_DIR}" "${RESULTS_DIR}/logs"
 
 # ── Functions ──
 
@@ -54,55 +57,122 @@ submit_database() {
     fi
 
     local TOTAL=$(count_lines "$SMI_FILE")
-    local NUM_TASKS=$(( (TOTAL + CHUNK_SIZE - 1) / CHUNK_SIZE ))
+    local NUM_CHUNKS=$(( (TOTAL + CHUNK_SIZE - 1) / CHUNK_SIZE ))
 
     echo "Database: ${DB_NAME}"
     echo "  Compounds: ${TOTAL}"
     echo "  Chunk size: ${CHUNK_SIZE}"
-    echo "  Array tasks: ${NUM_TASKS}"
+    echo "  Total chunks: ${NUM_CHUNKS}"
+    echo "  Parallel workers: ${PARALLEL_WORKERS}"
 
     local SLURM_SCRIPT="${RESULTS_DIR}/slurm_${DB_NAME}.sh"
 
-    cat > "${SLURM_SCRIPT}" << SLURM_EOF
+    cat > "${SLURM_SCRIPT}" << 'SLURM_EOF'
 #!/bin/bash
-#SBATCH --job-name=vs_${DB_NAME}
-#SBATCH --partition=${PARTITION}
+#SBATCH --job-name=vs_DBNAME
+#SBATCH --partition=PARTITION_VAL
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=${CPUS}
-#SBATCH --mem=${MEM}
-#SBATCH --time=${TIME}
-#SBATCH --array=0-$((NUM_TASKS - 1))%100
-#SBATCH --output=${RESULTS_DIR}/logs/${DB_NAME}_%a.out
-#SBATCH --error=${RESULTS_DIR}/logs/${DB_NAME}_%a.err
-${ACCOUNT}
+#SBATCH --ntasks-per-node=NTASKS_VAL
+#SBATCH --mem=MEM_VAL
+#SBATCH --time=TIME_VAL
+#SBATCH --output=RESULTS_DIR_VAL/logs/DBNAME_%j.out
+#SBATCH --error=RESULTS_DIR_VAL/logs/DBNAME_%j.err
+ACCOUNT_VAL
 
 module purge
 module load cpu
 module load gcc
 module load openbabel 2>/dev/null
 
-START=\$(( SLURM_ARRAY_TASK_ID * ${CHUNK_SIZE} ))
-OUTPUT="${RESULTS_DIR}/${DB_NAME}_chunk_\${SLURM_ARRAY_TASK_ID}.tsv"
+TOTAL_COMPOUNDS=TOTAL_VAL
+CHUNK=CHUNK_VAL
+WORKERS=WORKERS_VAL
+SMI=SMI_VAL
+SCREEN_PY=SCREEN_VAL
+RECEPTOR_FILE=RECEPTOR_VAL
+RES_DIR=RESULTS_DIR_VAL
+POSES=POSES_VAL
 
-echo "Task \${SLURM_ARRAY_TASK_ID}: compounds \${START} to \$(( START + ${CHUNK_SIZE} - 1 ))"
+echo "Starting virtual screening: DBNAME"
+echo "Total compounds: ${TOTAL_COMPOUNDS}"
+echo "Workers: ${WORKERS}"
+echo "Chunks of: ${CHUNK}"
+echo ""
 
-python3 ${SCREEN_SCRIPT} \\
-    --smi ${SMI_FILE} \\
-    --receptor ${RECEPTOR} \\
-    --center ${CENTER_X} ${CENTER_Y} ${CENTER_Z} \\
-    --size ${SIZE_X} ${SIZE_Y} ${SIZE_Z} \\
-    --exhaustiveness ${EXHAUSTIVENESS} \\
-    --start \${START} \\
-    --count ${CHUNK_SIZE} \\
-    --output \${OUTPUT} \\
-    --save-poses ${POSES_DIR} \\
-    --save-threshold -7.0
+# Function to process one chunk
+process_chunk() {
+    local START=$1
+    local CHUNK_ID=$2
+    local OUTPUT="${RES_DIR}/DBNAME_chunk_${CHUNK_ID}.tsv"
 
-echo "Task \${SLURM_ARRAY_TASK_ID} complete"
+    if [ -f "$OUTPUT" ]; then
+        local LINES=$(wc -l < "$OUTPUT")
+        if [ "$LINES" -gt 1 ]; then
+            echo "  Chunk ${CHUNK_ID} already done (${LINES} lines), skipping"
+            return 0
+        fi
+    fi
+
+    python3 ${SCREEN_PY} \
+        --smi ${SMI} \
+        --receptor ${RECEPTOR_FILE} \
+        --center CX CY CZ \
+        --size SX SY SZ \
+        --exhaustiveness EX \
+        --start ${START} \
+        --count ${CHUNK} \
+        --output ${OUTPUT} \
+        --save-poses ${POSES} \
+        --save-threshold -7.0
+
+    echo "  Chunk ${CHUNK_ID} complete"
+}
+
+# Launch chunks in parallel, WORKERS at a time
+RUNNING=0
+CHUNK_ID=0
+for START in $(seq 0 ${CHUNK} $((TOTAL_COMPOUNDS - 1))); do
+    process_chunk ${START} ${CHUNK_ID} &
+    CHUNK_ID=$((CHUNK_ID + 1))
+    RUNNING=$((RUNNING + 1))
+
+    if [ ${RUNNING} -ge ${WORKERS} ]; then
+        wait -n 2>/dev/null || wait
+        RUNNING=$((RUNNING - 1))
+    fi
+done
+
+# Wait for all remaining
+wait
+
+echo ""
+echo "All chunks complete for DBNAME"
+echo "Results in: ${RES_DIR}/"
 SLURM_EOF
 
-    mkdir -p "${RESULTS_DIR}/logs"
+    # Replace placeholders
+    sed -i "s|DBNAME|${DB_NAME}|g" "${SLURM_SCRIPT}"
+    sed -i "s|PARTITION_VAL|${PARTITION}|g" "${SLURM_SCRIPT}"
+    sed -i "s|NTASKS_VAL|${NTASKS}|g" "${SLURM_SCRIPT}"
+    sed -i "s|MEM_VAL|${MEM}|g" "${SLURM_SCRIPT}"
+    sed -i "s|TIME_VAL|${TIME}|g" "${SLURM_SCRIPT}"
+    sed -i "s|ACCOUNT_VAL|#SBATCH ${ACCOUNT}|g" "${SLURM_SCRIPT}"
+    sed -i "s|RESULTS_DIR_VAL|${RESULTS_DIR}|g" "${SLURM_SCRIPT}"
+    sed -i "s|TOTAL_VAL|${TOTAL}|g" "${SLURM_SCRIPT}"
+    sed -i "s|CHUNK_VAL|${CHUNK_SIZE}|g" "${SLURM_SCRIPT}"
+    sed -i "s|WORKERS_VAL|${PARALLEL_WORKERS}|g" "${SLURM_SCRIPT}"
+    sed -i "s|SMI_VAL|${SMI_FILE}|g" "${SLURM_SCRIPT}"
+    sed -i "s|SCREEN_VAL|${SCREEN_SCRIPT}|g" "${SLURM_SCRIPT}"
+    sed -i "s|RECEPTOR_VAL|${RECEPTOR}|g" "${SLURM_SCRIPT}"
+    sed -i "s|POSES_VAL|${POSES_DIR}|g" "${SLURM_SCRIPT}"
+    sed -i "s|CX|${CENTER_X}|g" "${SLURM_SCRIPT}"
+    sed -i "s|CY|${CENTER_Y}|g" "${SLURM_SCRIPT}"
+    sed -i "s|CZ|${CENTER_Z}|g" "${SLURM_SCRIPT}"
+    sed -i "s|SX|${SIZE_X}|g" "${SLURM_SCRIPT}"
+    sed -i "s|SY|${SIZE_Y}|g" "${SLURM_SCRIPT}"
+    sed -i "s|SZ|${SIZE_Z}|g" "${SLURM_SCRIPT}"
+    sed -i "s|EX|${EXHAUSTIVENESS}|g" "${SLURM_SCRIPT}"
+
     echo "  Submitting: sbatch ${SLURM_SCRIPT}"
     sbatch "${SLURM_SCRIPT}"
     echo ""
@@ -120,7 +190,6 @@ fi
 
 if [ ! -f "$SCREEN_SCRIPT" ]; then
     echo "ERROR: Screening script not found at ${SCREEN_SCRIPT}"
-    echo "Download it: curl -sL https://raw.githubusercontent.com/anirudhatalmale6-alt/autogrow-filter-fix/main/screen_database.py -o ${SCREEN_SCRIPT}"
     exit 1
 fi
 
@@ -131,6 +200,8 @@ echo "Receptor: ${RECEPTOR}"
 echo "Box center: ${CENTER_X}, ${CENTER_Y}, ${CENTER_Z}"
 echo "Box size: ${SIZE_X} x ${SIZE_Y} x ${SIZE_Z}"
 echo "Exhaustiveness: ${EXHAUSTIVENESS}"
+echo "Node: ${NTASKS} tasks, ${MEM} RAM, ${TIME}"
+echo "Parallel workers: ${PARALLEL_WORKERS}"
 echo "============================================"
 echo ""
 
@@ -153,5 +224,6 @@ esac
 
 echo "============================================"
 echo "Jobs submitted! Monitor with: squeue -u \$USER"
-echo "When done, run: python3 ${PROJECT_DIR}/collect_results.py"
+echo "Check progress: python3 ${PROJECT_DIR}/collect_results.py --progress"
+echo "When done: python3 ${PROJECT_DIR}/collect_results.py"
 echo "============================================"
