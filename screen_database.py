@@ -27,19 +27,14 @@ import shutil
 def find_vina():
     """Find the Vina executable."""
     candidates = [
+        os.path.expanduser("~/final_project/autogrow4/autogrow/docking/docking_executables/vina"),
         shutil.which("vina"),
         shutil.which("vina_1.2.5_linux_x86_64"),
-        os.path.expanduser("~/final_project/autogrow4/autogrow/docking/docking_class/docking_class_children/vina"),
         "/usr/local/bin/vina",
     ]
     for c in candidates:
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
-    vina_search = subprocess.run(["find", os.path.expanduser("~/final_project"), "-name", "vina*", "-type", "f", "-executable"],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
-    for line in vina_search.stdout.strip().split("\n"):
-        if line and "vina" in os.path.basename(line).lower():
-            return line
     return None
 
 
