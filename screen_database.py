@@ -26,14 +26,25 @@ import shutil
 
 def find_vina():
     """Find the Vina executable."""
+    home = os.path.expanduser("~")
     candidates = [
-        os.path.expanduser("~/final_project/autogrow4/autogrow/docking/docking_executables/vina"),
+        os.path.join(home, "final_project", "autogrow4", "autogrow", "docking", "docking_executables", "vina"),
         shutil.which("vina"),
         shutil.which("vina_1.2.5_linux_x86_64"),
         "/usr/local/bin/vina",
     ]
     for c in candidates:
-        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+        if c and os.path.isfile(c):
+            if not os.access(c, os.X_OK):
+                try:
+                    os.chmod(c, 0o755)
+                    print(f"  Fixed permissions on {c}")
+                except OSError:
+                    pass
+            if os.access(c, os.X_OK):
+                return c
+    for c in candidates:
+        if c and os.path.isfile(c):
             return c
     return None
 
