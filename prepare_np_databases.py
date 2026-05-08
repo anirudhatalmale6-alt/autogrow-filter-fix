@@ -17,6 +17,8 @@ import subprocess
 import sys
 import zipfile
 
+csv.field_size_limit(sys.maxsize)
+
 OUTPUT_DIR = os.path.expanduser("~/final_project/np_databases")
 
 NPATLAS_URL = "https://www.npatlas.org/static/downloads/NPAtlas_download.tsv"
